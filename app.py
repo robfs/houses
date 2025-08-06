@@ -8,13 +8,9 @@ import requests
 from bs4 import BeautifulSoup
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal
-from textual.widgets import Button, Footer, Header, Input
-from textual.screen import Screen
-from textual.screen import ModalScreen
-from textual.widgets import DataTable
-from textual.widgets import Label
 from textual.reactive import reactive
-
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label
 
 JSON_STORE = "houses.db"
 TO_REVIEW = "to-review"
@@ -46,31 +42,41 @@ class JSONStore:
         self.conn.execute(
             """
             create table if not exists houses (
-                key text primary key,
+                property_number text primary key,
                 status text,
-                value text
+                data JSON
             )
             """
         )
 
-    def set(self, key, status, value):
+    def set(self, property_number, status, data):
         self.conn.execute(
-                "insert or replace into houses (key, status, value) values (?, ?, ?)",
-                (key, status, json.dumps(value))
-                )
+            "insert or replace into houses (property_number, status, data) values (?, ?, ?)",
+            (property_number, status, json.dumps(data)),
+        )
         self.conn.commit()
 
     def get(self, key):
-        cursor = self.conn.execute("select value from houses where key = ?", (key, ))
+        cursor = self.conn.execute(
+            "select data from houses where property_number = ?", (key,)
+        )
         row = cursor.fetchone()
         return json.loads(row[0]) if row else None
 
-    def delete(self, key):
-        self.conn.execute("delete from houses where key = ?", (key,))
+    def get_by_status(self, status):
+        query = "select data from houses where status = ?"
+        cursor = self.conn.execute(query, (status,))
+        rows = cursor.fetchall()
+        return [json.loads(row[0]) for row in rows]
+
+    def delete(self, property_number):
+        query = "delete from houses where property_number = ?"
+        self.conn.execute(query, property_number)
         self.conn.commit()
 
-    def update_status(self, key, status):
-        self.conn.execute("update houses set status = ? where key = ?", (status, key))
+    def update_status(self, property_number, status):
+        query = "update houses set status = ? where property_number = ?"
+        self.conn.execute(query, (status, property_number))
         self.conn.commit()
 
 
@@ -180,17 +186,20 @@ class AddHouseScreen(ModalScreen[tuple[bool, str, dict]]):
                 print(f"Failed to parse {model_name}: {e}")
         return models
 
-    def add_house(self):
+    def add_house(self) -> tuple[bool, str, dict]:
         property_number = self.query_one("#property-number", Input).value
+        self.app.notify(f"Fetching property {property_number}")
         response = self.fetch_property_data(property_number)
         script = self.extract_model_script(response)
         property_models = self.get_models(script)
         page_data = property_models["PAGE_MODEL"]
-        return self.dismiss((False, propery_number, page_data))
+        self.app.notify(f"{page_data.keys()} retrieved.")
+        return (True, property_number, page_data)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save":
-            self.add_house()
+            dismiss = self.add_house()
+            self.dismiss(dismiss)
         else:
             self.dismiss((False, "", {}))
 
@@ -223,6 +232,8 @@ class HouseList(Container):
 
     def on_mount(self) -> None:
         self.set_border_title_from_id()
+        table = self.query_one(DataTable)
+        table.add_columns("ID", "Description")
         self.load_data()
 
     def set_border_title_from_id(self) -> None:
@@ -233,57 +244,65 @@ class HouseList(Container):
 
     def action_add_house(self) -> None:
         def process_house(house: tuple[bool, str, dict]):
-
-            if not house[0]:
+            to_save, key, data = house
+            if not to_save:
+                self.app.notify("Aborting add")
                 return
+            self.app.notify(f"Saving {key}")
             store = JSONStore(JSON_STORE)
-            store.set(house[1], self.id, house[3])
+            store.set(key, self.id, data)
+            self.app.notify(f"Data saved for {key}")
+
         # [{"to-review": [], "to-view": [], "viewed-yes": [], "viewed-no": []}]
         self.app.push_screen(AddHouseScreen(), process_house)
 
-    def action_move_house(self) -> None:
-        def move_house(to: str) -> None:
-            list_parent = self.parent
-            if not list_parent:
-                return
-            new_list = list_parent.query_one(f"#{to}", HouseList)
-            table_from = self.query_one(DataTable)
-            table_to = new_list.query_one(DataTable)
-            row_key, _ = table_from.coordinate_to_cell_key(table_from.cursor_coordinate)
-            row = table_from.get_row(row_key)
-            data_from = self.data.copy()
-            data_to = new_list.data.copy()
-            cols = list(data_from[0].keys())
-            new_data = {col: cell for col, cell in zip(cols, row, strict=True)}
-            data_to.append(new_data)
-            index_to_remove = data_from.index(new_data)
-            data_from.pop(index_to_remove)
-            self.data = data_from
-            new_list.data = data_to
-
-        self.app.push_screen(MoveScreen(), move_house)
+    # def action_move_house(self) -> None:
+    #     def move_house(to: str) -> None:
+    #         list_parent = self.parent
+    #         if not list_parent:
+    #             return
+    #         new_list = list_parent.query_one(f"#{to}", HouseList)
+    #         table_from = self.query_one(DataTable)
+    #         table_to = new_list.query_one(DataTable)
+    #         row_key, _ = table_from.coordinate_to_cell_key(table_from.cursor_coordinate)
+    #         row = table_from.get_row(row_key)
+    #         data_from = self.data.copy()
+    #         data_to = new_list.data.copy()
+    #         cols = list(data_from[0].keys())
+    #         new_data = {col: cell for col, cell in zip(cols, row, strict=True)}
+    #         data_to.append(new_data)
+    #         index_to_remove = data_from.index(new_data)
+    #         data_from.pop(index_to_remove)
+    #         self.data = data_from
+    #         new_list.data = data_to
+    #
+    #     self.app.push_screen(MoveScreen(), move_house)
 
     def load_data(self) -> None:
-        with open("data.json") as f:
-            data = json.load(f)
-        self.data = data[0][self.id]
+        store = JSONStore(JSON_STORE)
+        self.data = store.get_by_status(self.id)
 
-    def save_data(self) -> None:
-        with open("data.json") as f:
-            all_data = json.load(f)[0]
-        all_data[self.id] = self.data
-        with open("data.json", "w") as f:
-            json.dump([all_data], f)
+    # def save_data(self) -> None:
+    #     with open("data.json") as f:
+    #         all_data = json.load(f)[0]
+    #     all_data[self.id] = self.data
+    #     with open("data.json", "w") as f:
+    #         json.dump([all_data], f)
 
     def watch_data(self, data: list[dict]) -> None:
         if not data:
             return
-        cols = list(data[0].keys())
         table = self.query_one(DataTable)
-        table.clear(columns=True)
-        table.add_columns(*cols)
-        table.add_rows([list(item.values()) for item in data])
-        self.save_data()
+        table.clear()
+        for row in data:
+            property_data = row.get("propertyData", {})
+            text = property_data.get("text", {})
+            table.add_row(
+                property_data.get("id"),
+                text.get("description"),
+                key=property_data["id"],
+            )
+        # self.save_data()
 
 
 class MainScreen(Screen):
