@@ -16,6 +16,7 @@ from textual.widgets import Label
 from textual.reactive import reactive
 
 
+JSON_STORE = "houses.db"
 TO_REVIEW = "to-review"
 TO_VIEW = "to-view"
 VIEWED_YES = "viewed-yes"
@@ -68,7 +69,7 @@ class JSONStore:
         self.conn.execute("delete from houses where key = ?", (key,))
         self.conn.commit()
 
-    def move(self, key, status):
+    def update_status(self, key, status):
         self.conn.execute("update houses set status = ? where key = ?", (status, key))
         self.conn.commit()
 
@@ -126,7 +127,7 @@ class MoveScreen(ModalScreen[str]):
         self.dismiss(VIEWED_NO)
 
 
-class AddHouseScreen(ModalScreen[tuple[bool, dict]]):
+class AddHouseScreen(ModalScreen[tuple[bool, str, dict]]):
     DEFAULT_CSS = """
     AddHouseScreen {
             align: center middle;
@@ -185,14 +186,13 @@ class AddHouseScreen(ModalScreen[tuple[bool, dict]]):
         script = self.extract_model_script(response)
         property_models = self.get_models(script)
         page_data = property_models["PAGE_MODEL"]
-        self.app.notify(str(page_data))
-        return self.dismiss((False, {}))
+        return self.dismiss((False, propery_number, page_data))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save":
             self.add_house()
         else:
-            self.dismiss((False, {}))
+            self.dismiss((False, "", {}))
 
 
 class MainContainer(Container):
@@ -232,13 +232,12 @@ class HouseList(Container):
         return None
 
     def action_add_house(self) -> None:
-        def process_house(house: tuple[bool, dict]):
+        def process_house(house: tuple[bool, str, dict]):
+
             if not house[0]:
                 return
-            data = self.data.copy()
-            data.append(house[1])
-            self.data = data
-
+            store = JSONStore(JSON_STORE)
+            store.set(house[1], self.id, house[3])
         # [{"to-review": [], "to-view": [], "viewed-yes": [], "viewed-no": []}]
         self.app.push_screen(AddHouseScreen(), process_house)
 
