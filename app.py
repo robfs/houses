@@ -1,7 +1,9 @@
 """Main app file."""
 
 import json
+import sqlite3
 
+import regex
 import requests
 from bs4 import BeautifulSoup
 from textual.app import App, ComposeResult
@@ -35,6 +37,40 @@ HEADERS = {
     "Sec-Fetch-Site": "none",
     "Cache-Control": "max-age=0",
 }
+
+
+class JSONStore:
+    def __init__(self, db_path) -> None:
+        self.conn = sqlite3.connect(db_path)
+        self.conn.execute(
+            """
+            create table if not exists houses (
+                key text primary key,
+                status text,
+                value text
+            )
+            """
+        )
+
+    def set(self, key, status, value):
+        self.conn.execute(
+                "insert or replace into houses (key, status, value) values (?, ?, ?)",
+                (key, status, json.dumps(value))
+                )
+        self.conn.commit()
+
+    def get(self, key):
+        cursor = self.conn.execute("select value from houses where key = ?", (key, ))
+        row = cursor.fetchone()
+        return json.loads(row[0]) if row else None
+
+    def delete(self, key):
+        self.conn.execute("delete from houses where key = ?", (key,))
+        self.conn.commit()
+
+    def move(self, key, status):
+        self.conn.execute("update houses set status = ? where key = ?", (status, key))
+        self.conn.commit()
 
 
 class MoveScreen(ModalScreen[str]):
@@ -106,10 +142,6 @@ class AddHouseScreen(ModalScreen[tuple[bool, dict]]):
     """
 
     def compose(self) -> ComposeResult:
-        # yield Input(id="Name", placeholder="Name")
-        # yield Input(id="URL", placeholder="URL")
-        # yield Input(id="Price", placeholder="Price", type="integer")
-        # yield Input(id="Notes", placeholder="Notes")
         yield Input(
             id="property-number",
             placeholder="Rightmove proerty number",
@@ -117,191 +149,43 @@ class AddHouseScreen(ModalScreen[tuple[bool, dict]]):
         )
         yield Horizontal(Button("Save", id="save"), Button("Cancel", id="cancel"))
 
-    def parse_property_page(self, response: requests.Response):
-        """
-        Parse a specific Rightmove property page to extract detailed property information
-        """
-        if not response:
-            return None
+    @staticmethod
+    def fetch_property_data(property_number: str) -> requests.Response:
+        url = f"https://www.rightmove.co.uk/properties/{property_number}"
+        response = requests.get(url, headers=HEADERS)
+        response.raise_for_status()
+        return response
 
-        soup = BeautifulSoup(response.text, "html.parser")
-        to_find = "window.PAGE_MODEL"
-        scripts = soup.find_all("script")
-        for script in scripts:
-            self.app.notify(str(script)[:100])
-        property_data = {}
-        
-        
-        
-        #
-        # # Property price - multiple possible selectors
-        # price_selectors = [
-        #     'span[data-testid="price"]',
-        #     ".property-header-price",
-        #     "._1gfnqJ3Vtd1z40MlC0MzXu",
-        #     "h1",  # Sometimes price is in main heading
-        # ]
-        #
-        # for selector in price_selectors:
-        #     price_elem = soup.select_one(selector)
-        #     if price_elem and (
-        #         "£" in price_elem.get_text() or "POA" in price_elem.get_text()
-        #     ):
-        #         property_data["price"] = price_elem.get_text(strip=True)
-        #         break
-        #
-        # # Property address
-        # address_selectors = [
-        #     'address[data-testid="address-label"]',
-        #     'h1[data-testid="property-title"]',
-        #     ".property-header-address",
-        #     "h1",
-        #     "address",
-        # ]
-        #
-        # for selector in address_selectors:
-        #     address_elem = soup.select_one(selector)
-        #     if address_elem and address_elem != soup.select_one(
-        #         'span[data-testid="price"]'
-        #     ):
-        #         address_text = address_elem.get_text(strip=True)
-        #         if address_text and not address_text.startswith("£"):
-        #             property_data["address"] = address_text
-        #             break
-        #
-        # # Property type and bedrooms (from title or breadcrumbs)
-        # title_elem = soup.find("h1")
-        # if title_elem:
-        #     property_data["title"] = title_elem.get_text(strip=True)
-        #
-        # # Key features/property details
-        # features = []
-        #
-        # # Method 1: Look for feature lists
-        # feature_selectors = [
-        #     '[data-testid="property-features"] li',
-        #     ".key-features li",
-        #     "._2RnXSVJcWbWv4IpBC1Sng6 li",
-        #     ".property-features li",
-        # ]
-        #
-        # for selector in feature_selectors:
-        #     feature_elements = soup.select(selector)
-        #     if feature_elements:
-        #         features = [elem.get_text(strip=True) for elem in feature_elements]
-        #         break
-        #
-        # # Method 2: Look for key information section
-        # if not features:
-        #     info_sections = soup.find_all(
-        #         "div", string=re.compile(r"(bedroom|bathroom|reception|garden)", re.I)
-        #     )
-        #     for section in info_sections:
-        #         parent = section.find_parent()
-        #         if parent:
-        #             features.append(parent.get_text(strip=True))
-        #
-        # property_data["features"] = features
-        #
-        # # Property description
-        # description_selectors = [
-        #     '[data-testid="property-description"]',
-        #     ".property-description",
-        #     "._1u12RxIYGx3c6RrR5gSCKH",
-        #     '[data-testid="description-text"]',
-        # ]
-        #
-        # for selector in description_selectors:
-        #     desc_elem = soup.select_one(selector)
-        #     if desc_elem:
-        #         property_data["description"] = desc_elem.get_text(strip=True)
-        #         break
-        #
-        # # Extract property images
-        # image_urls = []
-        #
-        # # Multiple possible image selectors
-        # image_selectors = [
-        #     'img[data-testid="gallery-image"]',
-        #     ".gallery-image img",
-        #     "._3jEoSxJ4dPQMhzWNYAdG0b img",
-        #     '[data-testid="property-image"] img',
-        #     ".property-photos img",
-        # ]
-        #
-        # for selector in image_selectors:
-        #     images = soup.select(selector)
-        #     if images:
-        #         for img in images:
-        #             src = img.get("src") or img.get("data-src") or img.get("data-lazy")
-        #             if src and src.startswith("http"):
-        #                 image_urls.append(src)
-        #         break
-        #
-        # property_data["images"] = list(set(image_urls))  # Remove duplicates
-        # property_data["image_count"] = len(image_urls)
-        #
-        # # Agent/Branch information
-        # agent_selectors = [
-        #     '[data-testid="contactBranch"] h2',
-        #     ".agent-details h2",
-        #     ".branch-name",
-        #     "._3SesHHkUj7PNl73sSocFRY",
-        # ]
-        #
-        # for selector in agent_selectors:
-        #     agent_elem = soup.select_one(selector)
-        #     if agent_elem:
-        #         property_data["agent"] = agent_elem.get_text(strip=True)
-        #         break
-        #
-        # # Property ID from URL or page
-        # property_id = None
-        # canonical_link = soup.find("link", rel="canonical")
-        # if canonical_link and canonical_link.get("href"):
-        #     # Extract ID from URL like /properties/123456789
-        #     id_match = re.search(r"/properties/(\d+)", canonical_link["href"])
-        #     if id_match:
-        #         property_id = id_match.group(1)
-        #
-        # if not property_id:
-        #     # Try to find it in the current URL or page data
-        #     scripts = soup.find_all("script")
-        #     for script in scripts:
-        #         if script.string:
-        #             id_match = re.search(r'"propertyId"\s*:\s*"?(\d+)"?', script.string)
-        #             if id_match:
-        #                 property_id = id_match.group(1)
-        #                 break
-        #
-        # if property_id:
-        #     property_data["property_id"] = property_id
-        #
-        # # EPC rating
-        # epc_selectors = ['[data-testid="epc-rating"]', ".epc-rating", 'img[alt*="EPC"]']
-        #
-        # for selector in epc_selectors:
-        #     epc_elem = soup.select_one(selector)
-        #     if epc_elem:
-        #         epc_text = epc_elem.get("alt") or epc_elem.get_text(strip=True)
-        #         if epc_text:
-        #             property_data["epc_rating"] = epc_text
-        #             break
+    @staticmethod
+    def extract_model_script(response: requests.Response) -> str:
+        soup = BeautifulSoup(response.text)
+        pattern = regex.compile(r"window\.(\w+)\s*=\s*\{")
+        script = soup.find("script", string=pattern)
+        if not script:
+            return ""
+        return script.get_text(strip=True)
 
-        return property_data
+    @staticmethod
+    def get_models(script_text: str) -> dict[str, dict]:
+        models = {}
+        pattern = r"window\.(\w+)\s*=\s*(\{(?:[^{}]|(?2))*\})"
+        for match in regex.finditer(pattern, script_text, regex.DOTALL):
+            model_name = match.group(1)
+            js_content = match.group(2)
+            try:
+                # The content is already valid JSON, no need for js_to_json conversion
+                models[model_name] = json.loads(js_content)
+            except json.JSONDecodeError as e:
+                print(f"Failed to parse {model_name}: {e}")
+        return models
 
     def add_house(self):
         property_number = self.query_one("#property-number", Input).value
-        url = f"https://www.rightmove.co.uk/properties/{property_number}"
-        self.app.notify(f"Fetching {url}")
-        response = requests.get(url, headers=HEADERS, timeout=10)
-        response.raise_for_status()
-        with open("content.txt", "w") as f:
-            f.write(response.text)
-        data = self.parse_property_page(response)
-        self.app.notify(str(data))
-        # keys = ["Name", "URL", "Price", "Notes"]
-        # data = {key: self.query_one(f"#{key}", Input).value for key in keys}
+        response = self.fetch_property_data(property_number)
+        script = self.extract_model_script(response)
+        property_models = self.get_models(script)
+        page_data = property_models["PAGE_MODEL"]
+        self.app.notify(str(page_data))
         return self.dismiss((False, {}))
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
