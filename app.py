@@ -3,16 +3,18 @@
 import json
 import sqlite3
 from collections.abc import Collection
+from urllib.request import urlopen
 
 import regex
 import requests
 from bs4 import BeautifulSoup
+from PIL import Image as PilImage
 from textual.app import App, ComposeResult
 from textual.containers import Container, Horizontal, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, DataTable, Footer, Header, Input, Label
-from textual_image.textual import Image
+from textual_image.widget import Image
 
 JSON_STORE = "houses.db"
 TO_REVIEW = "to-review"
@@ -39,28 +41,38 @@ HEADERS = {
 
 
 class HouseQuery:
-    def atomic_query(
-        self, paths: Collection[str], names: Collection[str] = (), **kwargs
-    ) -> str:
+    def _column_string(self, paths: Collection[tuple[str, str]]) -> str:
         columns = []
-        if not names:
-            names = paths
-        for name, path in zip(names, paths, strict=True):
+        for path, name in paths:
             if "." in path:
-                column = f"json_extract(data, '$.{path}') as {name}"
+                clean_path = path.strip(".")
+                column = f"json_extract(data, '$.{clean_path}') as {name}"
             else:
                 column = f"{path} as {name}"
             columns.append(column)
 
-        column_str = ", ".join(columns)
+        return ", ".join(columns)
+
+    def _add_filters(self, query: str, **kwargs) -> str:
+        if not kwargs:
+            return query
+        filters = [f"{key} = '{value}'" for key, value in kwargs.items()]
+        filter_str = " and ".join(filters)
+        return query + f" where {filter_str}"
+
+    def atomic_query(self, paths: Collection[tuple[str, str]], **kwargs) -> str:
+        column_str = self._column_string(paths)
         query = f"select {column_str} from houses"
+        return self._add_filters(query, **kwargs)
 
-        if kwargs:
-            filters = [f"{key} = '{value}'" for key, value in kwargs.items()]
-            filter_str = " and ".join(filters)
-            query += f" where {filter_str}"
-
-        return query
+    def array_query(
+        self, array_path: str, paths: Collection[tuple[str, str]], **kwargs
+    ) -> str:
+        column_str = self._column_string(paths)
+        query = (
+            f"select {column_str} from houses, json_each(houses.data, '$.{array_path}')"
+        )
+        return self._add_filters(query, **kwargs)
 
 
 class JSONStore:
@@ -91,21 +103,6 @@ class JSONStore:
         row = cursor.fetchone()
         return json.loads(row[0]) if row else None
 
-    def get_all_by_status(self, status):
-        query = "select data from houses where status = ?"
-        cursor = self.conn.execute(query, (status,))
-        rows = cursor.fetchall()
-        return [json.loads(row["data"]) for row in rows]
-
-    def get_main_table_data(self, status):
-        query = HouseQuery().atomic_query(
-            ["property_number", "propertyData.address.displayAddress"],
-            ["property_number", "description"],
-            status=status,
-        )
-        cursor = self.conn.execute(query)
-        return cursor.fetchall()
-
     def delete(self, property_number):
         query = "delete from houses where property_number = ?"
         self.conn.execute(query, property_number)
@@ -116,12 +113,24 @@ class JSONStore:
         self.conn.execute(query, (status, property_number))
         self.conn.commit()
 
-    def get_property_data(self, property_number):
-        query = """
-        select
-            property_number,
-            json_extract()
-        """
+    def get_main_table_data(self, status: str):
+        query = HouseQuery().atomic_query(
+            [
+                ("property_number", "property_number"),
+                ("propertyData.address.displayAddress", "description"),
+            ],
+            status=status,
+        )
+        cursor = self.conn.execute(query)
+        return cursor.fetchall()
+
+    def get_image_urls(self, property_number: str) -> list[str]:
+        query = HouseQuery().array_query(
+            "propertyData.images", [(".url", "url")], property_number=property_number
+        )
+        cursor = self.conn.execute(query)
+        data = cursor.fetchall()
+        return [row for row in data]
 
 
 class MoveScreen(ModalScreen[str]):
@@ -310,6 +319,16 @@ class HouseList(Container):
                 row["property_number"], row["description"], key=row["property_number"]
             )
 
+    def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted) -> None:
+        property_number = message.row_key.value or ""
+        store = JSONStore(JSON_STORE)
+        url = store.get_image_urls(property_number)[0]
+        self.app.notify(url)
+        # parent = self.parent.parent
+        # image = parent.query_one(Image)
+        # self.app.notify(url)
+        # image.image = PilImage.open(urlopen(url))
+
 
 class DetailContainer(Container):
     DEFAULT_CSS = """
@@ -321,6 +340,15 @@ class DetailContainer(Container):
     }
     """
     BORDER_TITLE = "Details"
+
+    def compose(self) -> ComposeResult:
+        yield Image(
+            PilImage.open(
+                urlopen(
+                    "https://media.rightmove.co.uk/220k/219374/163721768/219374_969770_IMG_00_0000.jpeg"
+                )
+            )
+        )
 
 
 class MainScreen(Screen):

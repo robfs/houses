@@ -14,6 +14,7 @@ dependencies = [
 	"ruff>=0.12.7",
 	"textual-image[textual]>=0.8.3",
 	"textual>=5.1.1",
+	"pillow>=11.3.0",
 ]
 
 [dependency-groups]
