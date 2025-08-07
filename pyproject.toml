@@ -12,6 +12,7 @@ dependencies = [
 	"regex>=2025.7.34",
 	"requests>=2.32.4",
 	"ruff>=0.12.7",
+	"textual-image[textual]>=0.8.3",
 	"textual>=5.1.1",
 ]
 
