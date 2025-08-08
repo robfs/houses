@@ -1,0 +1,47 @@
+MainContainer {
+    border: $primary double;
+}
+AddHouseScreen {
+    align: center middle;
+
+    Container {
+        height: 10;
+        width: 50;
+        border: $accent double;
+        border-title-color: $accent;
+        align: center middle;
+    }
+}
+
+MoveScreen {
+    align: center middle;
+
+    Container {
+        border: $accent double;
+        border-title-color: $accent;
+        height: 5;
+        width: 70;
+        layout: grid;
+        grid-size: 4 1;
+        grid-gutter: 1;
+        align: center middle;
+
+        Label {
+            grid-columns: 1fr;
+        }
+    }
+}
+
+HouseList {
+    border: $accent round;
+    border-title-color: $accent;
+    border-title-background: $background;
+    background: $surface;
+}
+
+DetailContainer {
+    border: $accent round;
+    border-title-color: $accent;
+    border-title-background: $background;
+    background: $surface;
+}

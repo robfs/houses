@@ -3,6 +3,8 @@ from collections.abc import Collection
 
 import orjson as json
 
+__all__ = ["JSONStore"]
+
 
 class HouseQuery:
     def _column_string(

@@ -1,42 +1,84 @@
-import re
+from urllib.request import urlopen
 
-import orjson as json
-import regex
-import requests
-from bs4 import BeautifulSoup
+from PIL import Image as PILImage
 from textual.app import ComposeResult
-from textual.containers import Container
+from textual.containers import Container, Horizontal
 from textual.reactive import reactive
-from textual.widgets import DataTable
+from textual.screen import ModalScreen
+from textual.widgets import Button, DataTable, Footer, Input, Label
+from textual_image.widget import Image
 
-from utils.json_store import JSONStore
+from utils import JSONStore, get_property_models
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8",
-    "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8",
-    # 'Accept-Encoding': 'gzip, deflate, br',
-    "DNT": "1",
-    "Connection": "keep-alive",
-    "Upgrade-Insecure-Requests": "1",
-    "Sec-Fetch-Dest": "document",
-    "Sec-Fetch-Mode": "navigate",
-    "Sec-Fetch-Site": "none",
-    "Cache-Control": "max-age=0",
-}
+__all__ = ["HouseList", "IDS"]
+
 
 JSON_STORE = "houses.db"
 
+TO_REVIEW = "to-review"
+TO_VIEW = "to-view"
+VIEWED_YES = "viewed-yes"
+VIEWED_NO = "viewed-no"
+IDS = [TO_REVIEW, TO_VIEW, VIEWED_YES, VIEWED_NO]
+
+
+class AddHouseScreen(ModalScreen[tuple[bool, list[str]]]):
+    def compose(self) -> ComposeResult:
+        input = Input(
+            id="property-number",
+            placeholder="Rightmove proerty number",
+            value="163721768",
+        )
+        buttons = Horizontal(Button("Save", id="save"), Button("Cancel", id="cancel"))
+        yield Container(input, buttons)
+
+    def add_houses(self) -> tuple[bool, list[str]]:
+        input_value = self.query_one("#property-number", Input).value
+        property_numbers = input_value.split()
+        return (True, property_numbers)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "save":
+            dismiss = self.add_houses()
+            self.dismiss(dismiss)
+        else:
+            self.dismiss((False, []))
+
+
+class MoveScreen(ModalScreen[str]):
+    BINDINGS = [
+        ("q", "dismiss", "Close"),
+        ("v", "move_to_view", "To View"),
+        ("r", "move_to_review", "To Review"),
+        ("y", "move_to_yes", "Viewed Yes"),
+        ("n", "move_to_no", "Viewed No"),
+    ]
+
+    def compose(self) -> ComposeResult:
+        container = Container(
+            Label("To Reivew (r)"),
+            Label("To View (v)"),
+            Label("Viewed - yes (y)"),
+            Label("Viewed - No (n)"),
+        )
+        container.border_title = "Move to"
+        yield container
+        yield Footer()
+
+    def action_move_to_view(self) -> None:
+        self.dismiss(TO_VIEW)
+
+    def action_move_to_review(self) -> None:
+        self.dismiss(TO_REVIEW)
+
+    def action_move_to_yes(self) -> None:
+        self.dismiss(VIEWED_YES)
+
+    def action_move_to_no(self) -> None:
+        self.dismiss(VIEWED_NO)
+
 
 class HouseList(Container):
-    DEFAULT_CSS = """
-    HouseList {
-            border: $accent round;
-            border-title-color: $accent;
-            border-title-background: $background;
-            background: $surface;
-            }
-    """
     BINDINGS = [("m", "move_house", "Move"), ("a", "add_house", "Add House")]
     data: reactive[list[dict]] = reactive([])
 
@@ -55,36 +97,6 @@ class HouseList(Container):
         self.border_title = " ".join(map(str.capitalize, parts))
         return None
 
-    @staticmethod
-    def get_property_response(property_number: str) -> requests.Response:
-        url = f"https://www.rightmove.co.uk/properties/{property_number}"
-        response = requests.get(url, headers=HEADERS)
-        response.raise_for_status()
-        return response
-
-    @staticmethod
-    def extract_model_script(response: requests.Response) -> str:
-        soup = BeautifulSoup(response.text)
-        pattern = re.compile(r"window\.(\w+)\s*=\s*\{")
-        script = soup.find("script", string=pattern)
-        if not script:
-            return ""
-        return script.get_text(strip=True)
-
-    @classmethod
-    def get_models(cls, response: requests.Response) -> dict[str, dict]:
-        script_text = cls.extract_model_script(response)
-        models = {}
-        pattern = r"window\.(\w+)\s*=\s*(\{(?:[^{}]|(?2))*\})"
-        for match in regex.finditer(pattern, script_text, regex.DOTALL):
-            model_name = match.group(1)
-            js_content = match.group(2)
-            try:
-                models[model_name] = json.loads(js_content)
-            except json.JSONDecodeError as e:
-                print(f"Failed to parse {model_name}: {e}")
-        return models
-
     def action_add_house(self) -> None:
         def process_houses(houses: tuple[bool, list[str]] | None):
             if not houses:
@@ -96,8 +108,7 @@ class HouseList(Container):
             store = JSONStore(JSON_STORE)
             for property_number in property_numbers:
                 try:
-                    response = self.get_property_response(property_number)
-                    property_models = self.get_models(response)
+                    property_models = get_property_models(property_number)
                     page_data = property_models["PAGE_MODEL"]
                     store.set(property_number, self.id, page_data)
                     self.app.notify(f"Data saved for {property_number}")
@@ -147,7 +158,7 @@ class HouseList(Container):
         if not parent:
             return
         image = parent.query_one(Image)
-        image.image = PilImage.open(urlopen(url))
+        image.image = PILImage.open(urlopen(url))
 
     def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted) -> None:
         property_number = message.row_key.value or ""

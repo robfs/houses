@@ -3,10 +3,11 @@
 from textual.app import App
 from textual.reactive import reactive
 
-from screens.main_screen import MainScreen
+from screens import MainScreen
 
 
 class Houses(App):
+    CSS_PATH = "assets/styles.tcss"
     BINDINGS = [("q", "quit", "Quit")]
     SCREENS = {
         "main": MainScreen,
