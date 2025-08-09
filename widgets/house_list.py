@@ -1,5 +1,6 @@
-from urllib.request import urlopen
+from io import BytesIO
 
+import httpx
 from PIL import Image as PILImage
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
@@ -8,7 +9,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Input, Label
 from textual_image.widget import Image
 
-from utils import JSONStore, get_property_models
+from utils import JSONStore, get_property_models_async
 
 __all__ = ["HouseList", "IDS"]
 
@@ -97,8 +98,8 @@ class HouseList(Container):
         self.border_title = " ".join(map(str.capitalize, parts))
         return None
 
-    def action_add_house(self) -> None:
-        def process_houses(houses: tuple[bool, list[str]] | None):
+    async def action_add_house(self) -> None:
+        async def process_houses(houses: tuple[bool, list[str]] | None):
             if not houses:
                 return
             to_save, property_numbers = houses
@@ -108,7 +109,7 @@ class HouseList(Container):
             store = JSONStore(JSON_STORE)
             for property_number in property_numbers:
                 try:
-                    property_models = get_property_models(property_number)
+                    property_models = await get_property_models_async(property_number)
                     page_data = property_models["PAGE_MODEL"]
                     store.set(property_number, self.id, page_data)
                     self.app.notify(f"Data saved for {property_number}")
@@ -150,22 +151,27 @@ class HouseList(Container):
                 row["property_number"], row["description"], key=row["property_number"]
             )
 
-    def update_image_displayed(self, property_number: str) -> None:
+    async def update_image_displayed(self, property_number: str) -> None:
         store = JSONStore(JSON_STORE)
         url = store.get_image_urls(property_number)[0]
         parent = self.parent
         parent = parent.parent if parent else None
         if not parent:
             return
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url)
+            data = response.content
         image = parent.query_one(Image)
-        image.image = PILImage.open(urlopen(url))
+        image.image = PILImage.open(BytesIO(data))
 
-    def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted) -> None:
+    async def on_data_table_row_highlighted(
+        self, message: DataTable.RowHighlighted
+    ) -> None:
         property_number = message.row_key.value or ""
-        self.update_image_displayed(property_number)
+        await self.update_image_displayed(property_number)
 
-    def on_descendant_focus(self) -> None:
+    async def on_descendant_focus(self) -> None:
         table = self.query_one(DataTable)
         cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
         property_number = cell_key.row_key.value or ""
-        self.update_image_displayed(property_number)
+        await self.update_image_displayed(property_number)
