@@ -25,11 +25,7 @@ IDS = [TO_REVIEW, TO_VIEW, VIEWED_YES, VIEWED_NO]
 
 class AddHouseScreen(ModalScreen[tuple[bool, list[str]]]):
     def compose(self) -> ComposeResult:
-        input = Input(
-            id="property-number",
-            placeholder="Rightmove proerty number",
-            value="163721768",
-        )
+        input = Input(id="property-number", placeholder="Rightmove proerty number")
         buttons = Horizontal(Button("Save", id="save"), Button("Cancel", id="cancel"))
         yield Container(input, buttons)
 
@@ -43,7 +39,7 @@ class AddHouseScreen(ModalScreen[tuple[bool, list[str]]]):
             dismiss = self.add_houses()
             self.dismiss(dismiss)
         else:
-            self.dismiss((False, []))
+            self.dismiss()
 
 
 class MoveScreen(ModalScreen[str]):
