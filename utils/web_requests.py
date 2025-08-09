@@ -1,4 +1,7 @@
+import asyncio
 import re
+from collections.abc import Generator
+from typing import AsyncGenerator
 
 import httpx
 import orjson as json
@@ -35,12 +38,6 @@ def get_property_response(property_number: str) -> requests.Response:
     return response
 
 
-async def get_property_response_async(property_number: str) -> httpx.Response:
-    url = rightmove_url(property_number)
-    async with httpx.AsyncClient() as client:
-        return await client.get(url, headers=HEADERS)
-
-
 def extract_model_script(response: requests.Response | httpx.Response) -> str:
     soup = BeautifulSoup(response.text)
     pattern = re.compile(r"window\.(\w+)\s*=\s*\{")
@@ -67,6 +64,20 @@ def get_property_models(property_number: str) -> dict[str, dict]:
     response = get_property_response(property_number)
     script_text = extract_model_script(response)
     return extract_models(script_text)
+
+
+async def get_property_images_async(urls: list[str]) -> AsyncGenerator[bytes]:
+    async with httpx.AsyncClient() as client:
+        tasks = [client.get(url, headers=HEADERS) for url in urls]
+        for task in asyncio.as_completed(tasks):
+            response = await task
+            yield response.content
+
+
+async def get_property_response_async(property_number: str) -> httpx.Response:
+    url = rightmove_url(property_number)
+    async with httpx.AsyncClient() as client:
+        return await client.get(url, headers=HEADERS)
 
 
 async def get_property_models_async(property_number: str) -> dict[str, dict]:
