@@ -1,11 +1,12 @@
 import re
 
+import httpx
 import orjson as json
 import regex
 import requests
 from bs4 import BeautifulSoup
 
-__all__ = ["get_property_models"]
+__all__ = ["get_property_models", "get_property_models_async"]
 
 
 HEADERS = {
@@ -23,14 +24,24 @@ HEADERS = {
 }
 
 
+def rightmove_url(property_number: str) -> str:
+    return f"https://www.rightmove.co.uk/properties/{property_number}"
+
+
 def get_property_response(property_number: str) -> requests.Response:
-    url = f"https://www.rightmove.co.uk/properties/{property_number}"
+    url = rightmove_url(property_number)
     response = requests.get(url, headers=HEADERS)
     response.raise_for_status()
     return response
 
 
-def extract_model_script(response: requests.Response) -> str:
+async def get_property_response_async(property_number: str) -> httpx.Response:
+    url = rightmove_url(property_number)
+    async with httpx.AsyncClient() as client:
+        return await client.get(url, headers=HEADERS)
+
+
+def extract_model_script(response: requests.Response | httpx.Response) -> str:
     soup = BeautifulSoup(response.text)
     pattern = re.compile(r"window\.(\w+)\s*=\s*\{")
     script = soup.find("script", string=pattern)
@@ -54,5 +65,11 @@ def extract_models(script_text: str) -> dict[str, dict]:
 
 def get_property_models(property_number: str) -> dict[str, dict]:
     response = get_property_response(property_number)
+    script_text = extract_model_script(response)
+    return extract_models(script_text)
+
+
+async def get_property_models_async(property_number: str) -> dict[str, dict]:
+    response = await get_property_response_async(property_number)
     script_text = extract_model_script(response)
     return extract_models(script_text)
