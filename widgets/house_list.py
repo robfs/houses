@@ -4,6 +4,7 @@ import httpx
 from PIL import Image as PILImage
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
+from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Input, Label
@@ -78,6 +79,7 @@ class MoveScreen(ModalScreen[str]):
 class HouseList(Container):
     BINDINGS = [("m", "move_house", "Move"), ("a", "add_house", "Add House")]
     data: reactive[list[dict]] = reactive([])
+    property_number: reactive[str] = reactive("")
 
     def compose(self) -> ComposeResult:
         yield DataTable(zebra_stripes=True, cursor_type="row")
@@ -147,27 +149,24 @@ class HouseList(Container):
                 row["property_number"], row["description"], key=row["property_number"]
             )
 
-    async def update_image_displayed(self, property_number: str) -> None:
-        store = JSONStore(JSON_STORE)
-        url = store.get_image_urls(property_number)[0]
-        parent = self.parent
-        parent = parent.parent if parent else None
-        if not parent:
-            return
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url)
-            data = response.content
-        image = parent.query_one(Image)
-        image.image = PILImage.open(BytesIO(data))
+    class HouseSelectionChanged(Message):
+        def __init__(self, property_number: str) -> None:
+            super().__init__()
+            self.property_number = property_number
+
+    def watch_property_number(self, property_number: str) -> None:
+        self.app.notify("watcher fired")
+        query = self.query("#detail-container")
+        if query:
+            detail_container = query.first()
+            detail_container.post_message(self.HouseSelectionChanged(property_number))
 
     async def on_data_table_row_highlighted(
         self, message: DataTable.RowHighlighted
     ) -> None:
-        property_number = message.row_key.value or ""
-        await self.update_image_displayed(property_number)
+        self.property_number = message.row_key.value or ""
 
     async def on_descendant_focus(self) -> None:
         table = self.query_one(DataTable)
         cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
-        property_number = cell_key.row_key.value or ""
-        await self.update_image_displayed(property_number)
+        self.property_number = cell_key.row_key.value or ""
