@@ -1,6 +1,6 @@
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
-from textual.events import DescendantFocus
+from textual.events import Focus
 from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
@@ -70,17 +70,15 @@ class MoveScreen(ModalScreen[str]):
         self.dismiss(VIEWED_NO)
 
 
-class HouseList(Container):
+class HouseList(DataTable):
     BINDINGS = [("m", "move_house", "Move"), ("a", "add_house", "Add House")]
     data: reactive[list[dict]] = reactive([])
     property_number: reactive[str] = reactive("")
 
-    def compose(self) -> ComposeResult:
-        yield DataTable(zebra_stripes=True, cursor_type="row")
-
     def on_mount(self) -> None:
         self.set_border_title_from_id()
-        table = self.query_one(DataTable)
+        self.cursor_type = "row"
+        table = self
         table.add_columns("ID", "Description")
         self.load_data()
 
@@ -120,7 +118,7 @@ class HouseList(Container):
             list_container = self.parent
             if not list_container:
                 raise ValueError(f"No parent container for {self}")
-            old_table = self.query_one(DataTable)
+            old_table = self
             key, _ = old_table.coordinate_to_cell_key(old_table.cursor_coordinate)
             store = JSONStore(JSON_STORE)
             self.app.notify(f"Moving {key.value} to {to}")
@@ -136,7 +134,7 @@ class HouseList(Container):
             raise ValueError(f"{self} missind id.")
         store = JSONStore(JSON_STORE)
         data = store.get_main_table_data(self.id)
-        table = self.query_one(DataTable)
+        table = self
         table.clear()
         for row in data:
             table.add_row(
@@ -149,7 +147,12 @@ class HouseList(Container):
             self.property_number = property_number
 
     def notify_container(self) -> None:
-        detail_container = self.screen.query_one("#detail-container")
+        if not self.has_focus_within:
+            return
+        containers = self.screen.query("#detail-container")
+        if not containers:
+            return
+        detail_container = containers.first()
         detail_container.post_message(self.HouseSelectionChanged(self.property_number))
 
     def watch_property_number(self) -> None:
@@ -158,5 +161,7 @@ class HouseList(Container):
     def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted) -> None:
         self.property_number = message.row_key.value or ""
 
-    def on_descendant_focus(self, message: DescendantFocus) -> None:
+    def on_focus(self, message: Focus) -> None:
+        if message.from_app_focus:
+            return
         self.notify_container()
