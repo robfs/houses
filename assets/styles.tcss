@@ -1,6 +1,11 @@
 MainContainer {
     border: $primary double;
 }
+
+#house-lists {
+    layout: grid;
+}
+
 AddHouseScreen {
     align: center middle;
 
@@ -37,6 +42,7 @@ HouseList {
     border-title-color: $accent;
     border-title-background: $background;
     background: $surface;
+    height: 100%;
 }
 
 DetailContainer {
@@ -44,4 +50,33 @@ DetailContainer {
     border-title-color: $accent;
     border-title-background: $background;
     background: $surface;
+
+    Horizontal {
+        height: auto;
+        content-align: center middle;
+        # border: red solid;
+
+        Image {
+            # border: blue solid;
+            padding-top: 1;
+            padding-left: 1;
+        }
+    }
+
+    #gallery-main {
+        height: 30;
+        Image {
+            height: auto;
+            width: 100%;
+        }
+    }
+
+    .triple {
+        height: 10;
+        Image {
+            overflow: hidden;
+            height: auto;
+            width: 33%;
+        }
+    }
 }
