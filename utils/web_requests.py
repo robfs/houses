@@ -1,13 +1,14 @@
 import asyncio
 import re
-from collections.abc import Generator
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 
 import httpx
 import orjson as json
 import regex
 import requests
 from bs4 import BeautifulSoup
+
+from utils import JSON_STORE, JSONStore
 
 __all__ = ["get_property_models", "get_property_models_async"]
 
@@ -66,7 +67,8 @@ def get_property_models(property_number: str) -> dict[str, dict]:
     return extract_models(script_text)
 
 
-async def get_property_images_async(urls: list[str]) -> AsyncGenerator[bytes]:
+async def get_property_images_async(property_number: str) -> AsyncGenerator[bytes]:
+    urls = JSONStore(JSON_STORE).get_image_urls(property_number)
     async with httpx.AsyncClient() as client:
         tasks = [client.get(url, headers=HEADERS) for url in urls]
         for task in asyncio.as_completed(tasks):

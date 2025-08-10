@@ -1,21 +1,15 @@
-from io import BytesIO
-
-import httpx
-from PIL import Image as PILImage
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal
+from textual.events import DescendantFocus
 from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Input, Label
-from textual_image.widget import Image
 
-from utils import JSONStore, get_property_models_async
+from utils import JSON_STORE, JSONStore, get_property_models_async
 
 __all__ = ["HouseList", "IDS"]
 
-
-JSON_STORE = "houses.db"
 
 TO_REVIEW = "to-review"
 TO_VIEW = "to-view"
@@ -154,19 +148,15 @@ class HouseList(Container):
             super().__init__()
             self.property_number = property_number
 
-    def watch_property_number(self, property_number: str) -> None:
-        self.app.notify("watcher fired")
-        query = self.query("#detail-container")
-        if query:
-            detail_container = query.first()
-            detail_container.post_message(self.HouseSelectionChanged(property_number))
+    def notify_container(self) -> None:
+        detail_container = self.screen.query_one("#detail-container")
+        detail_container.post_message(self.HouseSelectionChanged(self.property_number))
 
-    async def on_data_table_row_highlighted(
-        self, message: DataTable.RowHighlighted
-    ) -> None:
+    def watch_property_number(self) -> None:
+        self.notify_container()
+
+    def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted) -> None:
         self.property_number = message.row_key.value or ""
 
-    async def on_descendant_focus(self) -> None:
-        table = self.query_one(DataTable)
-        cell_key = table.coordinate_to_cell_key(table.cursor_coordinate)
-        self.property_number = cell_key.row_key.value or ""
+    def on_descendant_focus(self, message: DescendantFocus) -> None:
+        self.notify_container()

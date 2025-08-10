@@ -3,7 +3,9 @@ from collections.abc import Collection
 
 import orjson as json
 
-__all__ = ["JSONStore"]
+__all__ = ["JSONStore", "JSON_STORE"]
+
+JSON_STORE = "houses.db"
 
 
 class HouseQuery:
