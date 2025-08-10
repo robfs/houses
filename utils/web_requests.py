@@ -67,13 +67,47 @@ def get_property_models(property_number: str) -> dict[str, dict]:
     return extract_models(script_text)
 
 
-async def get_property_images_async(property_number: str) -> AsyncGenerator[bytes]:
+async def fetch_with_retry(
+    client: httpx.AsyncClient, url: str, max_concurrent: int = 5, retries: int = 2
+) -> bytes:
+    semaphore = asyncio.Semaphore(max_concurrent)
+    async with semaphore:
+        for attempt in range(retries + 1):
+            try:
+                response = await client.get(
+                    url, headers=HEADERS, timeout=httpx.Timeout(30.0)
+                )
+                response.raise_for_status()
+
+                return response.content
+
+            except (httpx.RequestError, httpx.HTTPStatusError):
+                if attempt < retries:
+                    # Exponential backoff for retries
+                    wait_time = (2**attempt) * 0.5
+                    await asyncio.sleep(wait_time)
+                    continue
+        print(f"Failed to fetch {url} after {retries} retries")
+        return b""
+
+
+async def get_property_images_async(
+    property_number: str, max_concurrent: int = 5, retries: int = 2
+) -> AsyncGenerator[bytes, None]:
     urls = JSONStore(JSON_STORE).get_image_urls(property_number)
-    async with httpx.AsyncClient() as client:
-        tasks = [client.get(url, headers=HEADERS) for url in urls]
-        for task in asyncio.as_completed(tasks):
-            response = await task
-            yield response.content
+
+    # Use client with connection limits
+    limits = httpx.Limits(max_keepalive_connections=5, max_connections=10)
+    async with httpx.AsyncClient(limits=limits) as client:
+        tasks = [fetch_with_retry(client, url, max_concurrent, retries) for url in urls]
+        header_image = tasks[0]
+        content = await header_image
+        yield content
+
+        for task in asyncio.as_completed(tasks[1:]):
+            content = await task
+            if content:
+                yield content
 
 
 async def get_property_response_async(property_number: str) -> httpx.Response:
