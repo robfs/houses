@@ -1,5 +1,6 @@
 import typing
 from io import BytesIO
+from itertools import cycle
 
 from PIL import Image as PILImage
 from textual.app import ComposeResult
@@ -24,7 +25,8 @@ class MainContainer(Container):
     def compose(self) -> ComposeResult:
         lists = [HouseList(id=id) for id in IDS]
         yield Horizontal(
-            Vertical(*lists, id="house-lists"), DetailContainer(id="detail-container")
+            Vertical(*lists, id="house-lists"),
+            DetailContainer(Image(id="gallery-main"), id="detail-container"),
         )
 
 
@@ -39,31 +41,29 @@ class DetailContainer(VerticalScroll):
         if not message.property_number:
             return None
         self.app.notify("firing")
-        self.remove_children()
-        self.mount(Image(id="gallery-main"))
+        self.remove_children(Horizontal)
         images = get_property_images_async(message.property_number)
-        classes = ["double", "triple"]
+        classes = cycle([("double", 2), ("triple", 3)])
+        n = 0
         async for image in images:
             image_widget = Image(PILImage.open(BytesIO(image)))
-            # get last horizontal
             horizontals = self.query(Horizontal)
-            # if none: create container and mount image
             if not horizontals:
-                self.mount(Horizontal(image_widget, classes="triple"))
+                class_, n = next(classes)
+                self.mount(Horizontal(image_widget, classes=class_))
                 continue
             horizontal = horizontals.last()
-            if len(horizontal.children) < 3:
-                # if not full: mount image inside
+            if len(horizontal.children) < n:
                 horizontal.mount(image_widget)
             else:
-                # if full: create new horizontal container and mount image
-                self.mount(Horizontal(image_widget, classes="triple"))
+                class_, n = next(classes)
+                self.mount(Horizontal(image_widget, classes=class_))
             self.n_images += 1
         self.main_image_index = 1
 
     def watch_main_image_index(self, image_index: int) -> None:
         images = self.query(Image)
-        if not images:
+        if len(images) < 2:
             self.app.notify("FAILED!")
             return
         image = images[image_index]
@@ -83,7 +83,7 @@ class MainScreen(Screen):
 
     def action_next_image(self) -> None:
         container = self.query_one(DetailContainer)
-        if container.main_image_index < container.n_images:
+        if container.main_image_index < container.n_images + 1:
             container.main_image_index += 1
         else:
             container.main_image_index = 1
@@ -91,6 +91,6 @@ class MainScreen(Screen):
     def action_prev_image(self) -> None:
         container = self.query_one(DetailContainer)
         if container.main_image_index == 1:
-            container.main_image_index = container.n_images
+            container.main_image_index = container.n_images + 1
         else:
             container.main_image_index -= 1

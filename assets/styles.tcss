@@ -54,17 +54,11 @@ DetailContainer {
     Horizontal {
         height: auto;
         content-align: center middle;
-        # border: red solid;
-
-        Image {
-            # border: blue solid;
-            padding-top: 1;
-            padding-left: 1;
-        }
     }
 
     #gallery-main {
         height: 30;
+        width: 100%;
         Image {
             height: auto;
             width: 100%;
@@ -72,11 +66,24 @@ DetailContainer {
     }
 
     .triple {
-        height: 10;
+        height: 12;
         Image {
             overflow: hidden;
             height: auto;
             width: 33%;
+            padding-top: 1;
+            padding-left: 1;
+        }
+    }
+    
+    .double {
+        height: 12;
+        Image {
+            overflow: hidden;
+            height: auto;
+            width: 50%;
+            padding-top: 1;
+            padding-left: 1;
         }
     }
 }
