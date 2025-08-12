@@ -18,6 +18,27 @@ class PropertyParser(Protocol):
     def parse(self, content: str) -> dict: ...
 
 
+class PropertyStore(Protocol):
+    def set(self, id: str, data: dict, *args, **kwargs) -> str: ...
+    def get(self, id: str) -> dict: ...
+    def delete(self, id: str) -> bool: ...
+    def update(self, id: str, *args, **kwargs) -> str: ...
+
+
+class PropertyService(Protocol):
+    site: PropertySite
+    fetchers: list[PropertyFetcher]
+    parsers: list[PropertyParser]
+    store: PropertyStore
+
+
+def check_url_host_in(url: str, valid: set[str]) -> bool:
+    host = urlparse(url).hostname
+    if not host:
+        raise ValueError(f"Could not detect host in url: {url}")
+    return host in valid
+
+
 class RightMove:
     @staticmethod
     def get_property_url(property_number: str) -> str:
@@ -38,20 +59,22 @@ class RightMoveFetcher:
         "Sec-Fetch-Site": "none",
         "Cache-Control": "max-age=0",
     }
+    valid_hosts: set[str] = {"rightmove.co.uk", "www.rightmove.co.uk"}
 
     def supports_url(self, url: str) -> bool:
-        host = urlparse(url).hostname
-        if not host:
-            raise ValueError(f"Could not detect host in url: {url}")
-        return host.lower() in {"www.rightmove.com", "rightmove.com"}
+        return check_url_host_in(url.lower(), self.valid_hosts)
 
     def fetch(self, url: str) -> str:
         response = requests.get(url, headers=self.HEADERS)
+        response.raise_for_status()
         return response.text
 
 
 class RightMoveParser:
-    pass
+    valid_hosts: set[str] = {"rightmove.co.uk", "www.rightmove.co.uk"}
+
+    def supports_url(self, url: str) -> bool:
+        return check_url_host_in(url, self.valid_hosts)
 
 
 def main(): ...
