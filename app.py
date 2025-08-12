@@ -12,7 +12,6 @@ class Houses(App):
     SCREENS = {
         "main": MainScreen,
     }
-    houses: reactive[dict[str, list[dict]]] = reactive({})
 
     def on_mount(self) -> None:
         self.theme = "nord"
