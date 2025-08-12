@@ -43,21 +43,21 @@ class DetailContainer(VerticalScroll):
         self.remove_children(Horizontal)
         self.query_one(Image).image = None
         images = get_property_images_async(message.property_number)
-        classes = cycle([("double", 2), ("triple", 3)])
+        styling = cycle([("double", 2), ("triple", 3)])
         n = 0
         async for image in images:
             image_widget = Image(PILImage.open(BytesIO(image)))
             horizontals = self.query(Horizontal)
             if not horizontals:
-                class_, n = next(classes)
-                self.mount(Horizontal(image_widget, classes=class_))
+                style, n = next(styling)
+                self.mount(Horizontal(image_widget, classes=style))
                 continue
             horizontal = horizontals.last()
             if len(horizontal.children) < n:
                 horizontal.mount(image_widget)
             else:
-                class_, n = next(classes)
-                self.mount(Horizontal(image_widget, classes=class_))
+                style, n = next(styling)
+                self.mount(Horizontal(image_widget, classes=style))
             self.n_images += 1
         self.main_image_index = 1
 
