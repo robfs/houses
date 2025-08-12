@@ -41,6 +41,7 @@ class DetailContainer(VerticalScroll):
         if not message.property_number:
             return None
         self.remove_children(Horizontal)
+        self.query_one(Image).image = None
         images = get_property_images_async(message.property_number)
         classes = cycle([("double", 2), ("triple", 3)])
         n = 0
