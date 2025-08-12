@@ -40,7 +40,6 @@ class DetailContainer(VerticalScroll):
     ) -> None:
         if not message.property_number:
             return None
-        self.app.notify("firing")
         self.remove_children(Horizontal)
         images = get_property_images_async(message.property_number)
         classes = cycle([("double", 2), ("triple", 3)])
@@ -64,11 +63,9 @@ class DetailContainer(VerticalScroll):
     def watch_main_image_index(self, image_index: int) -> None:
         images = self.query(Image)
         if len(images) < 2:
-            self.app.notify("FAILED!")
             return
         image = images[image_index]
         main_image = self.query_one("#gallery-main", Image)
-        self.app.notify(f"{image.image}")
         main_image.image = image.image
         main_image.image
 
