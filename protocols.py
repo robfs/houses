@@ -1,6 +1,8 @@
 from typing import Protocol
 from urllib.parse import urlparse
 
+import orjson
+import regex
 import requests
 
 
@@ -76,8 +78,29 @@ class RightMoveParser:
     def supports_url(self, url: str) -> bool:
         return check_url_host_in(url, self.valid_hosts)
 
+    def _get_page_model(self, content: str) -> str:
+        pattern = r"window\.(PAGE_MODEL)\s*=\s*(\{(?:[^{}]|(?2))*\})"
+        match_ = regex.search(pattern, content, regex.DOTALL)
+        if not match_:
+            raise ValueError("Couldn't locate page model.")
+        return match_.group(1).strip()
 
-def main(): ...
+    def parse(self, content: str) -> dict:
+        script = self._get_page_model(content)
+        print(script)
+        # return orjson.loads(script)
+
+
+def main():
+    property_number = "163179074"
+    site = RightMove()
+    url = site.get_property_url(property_number)
+    fetcher = RightMoveFetcher()
+    content = fetcher.fetch(url)
+    # with open("content.html") as f:
+    #     content = f.read()
+    parser = RightMoveParser()
+    data = parser.parse(content)
 
 
 if __name__ == "__main__":
