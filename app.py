@@ -5,8 +5,13 @@ from textual.reactive import var
 
 from protocols import PropertyService
 from screens import MainScreen
-from utils import HouseService, RightMove, RightMoveFetcher, RightMoveParser
-from utils.json_store import HouseStore
+from utils import (
+    HouseService,
+    RightMove,
+    RightMoveFetcher,
+    RightMoveParser,
+    RightMoveStore,
+)
 
 
 class Houses(App):
@@ -23,12 +28,12 @@ class Houses(App):
 
 
 if __name__ == "__main__":
-    db_name = "houses.db"
-    site = RightMove()
+    db_name = "houses_2.db"
+    sites = [RightMove()]
     fetchers = [RightMoveFetcher()]
     parsers = [RightMoveParser()]
-    stores = [HouseStore(db_name)]
-    service = HouseService(site, fetchers, parsers, stores)
+    stores = [RightMoveStore(db_name)]
+    service = HouseService(sites, fetchers, parsers, stores)
     app = Houses()
     app.service = service
 

@@ -1,8 +1,5 @@
 import typing
-from io import BytesIO
-from itertools import cycle
 
-from PIL import Image as PILImage
 from textual.app import ComposeResult
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.reactive import reactive, var
@@ -10,7 +7,6 @@ from textual.screen import Screen
 from textual.widgets import Footer, Header
 from textual_image.widget import Image
 
-from utils import get_property_images_async
 from widgets import IDS, HouseList
 
 if typing.TYPE_CHECKING:
@@ -34,41 +30,6 @@ class DetailContainer(VerticalScroll):
     BORDER_TITLE = "Details"
     main_image_index: reactive[int] = reactive(1, always_update=True)
     n_images: var[int] = var(0)
-
-    async def on_house_list_house_selection_changed(
-        self, message: HouseList.HouseSelectionChanged
-    ) -> None:
-        if not message.property_number:
-            return None
-        self.remove_children(Horizontal)
-        self.query_one(Image).image = None
-        images = get_property_images_async(message.property_number)
-        styling = cycle([("double", 2), ("triple", 3)])
-        n = 0
-        async for image in images:
-            image_widget = Image(PILImage.open(BytesIO(image)))
-            horizontals = self.query(Horizontal)
-            if not horizontals:
-                style, n = next(styling)
-                self.mount(Horizontal(image_widget, classes=style))
-                continue
-            horizontal = horizontals.last()
-            if len(horizontal.children) < n:
-                horizontal.mount(image_widget)
-            else:
-                style, n = next(styling)
-                self.mount(Horizontal(image_widget, classes=style))
-            self.n_images += 1
-        self.main_image_index = 1
-
-    def watch_main_image_index(self, image_index: int) -> None:
-        images = self.query(Image)
-        if len(images) < 2:
-            return
-        image = images[image_index]
-        main_image = self.query_one("#gallery-main", Image)
-        main_image.image = image.image
-        main_image.image
 
 
 class MainScreen(Screen):

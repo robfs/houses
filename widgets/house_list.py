@@ -4,9 +4,9 @@ from textual.events import Focus
 from textual.message import Message
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Footer, Input, Label
+from textual.widgets import Button, DataTable, Footer, Input, Label, Select
 
-from utils import JSON_STORE, JSONStore, get_property_models_async
+from protocols import PropertyService
 
 __all__ = ["HouseList", "IDS"]
 
@@ -18,16 +18,26 @@ VIEWED_NO = "viewed-no"
 IDS = [TO_REVIEW, TO_VIEW, VIEWED_YES, VIEWED_NO]
 
 
-class AddHouseScreen(ModalScreen[tuple[bool, list[str]]]):
+class AddHouseScreen(ModalScreen[tuple[bool, str, list[str]]]):
     def compose(self) -> ComposeResult:
-        input = Input(id="property-number", placeholder="Rightmove proerty number")
+        input = Input(
+            id="property-number",
+            placeholder="Rightmove proerty number",
+            value="163179074",
+        )
+        dropdown = Select(
+            id="property-site", options=[("Rightmove", "rightmove")], allow_blank=False
+        )
         buttons = Horizontal(Button("Save", id="save"), Button("Cancel", id="cancel"))
-        yield Container(input, buttons)
+        yield Container(input, dropdown, buttons)
 
-    def add_houses(self) -> tuple[bool, list[str]]:
+    def add_houses(self) -> tuple[bool, str, list[str]]:
         input_value = self.query_one("#property-number", Input).value
+        site = self.query_one("#property-site", Select).value
+        if not site:
+            raise ValueError("No site set")
         property_numbers = input_value.split()
-        return (True, property_numbers)
+        return (True, str(site), property_numbers)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "save":
@@ -77,9 +87,9 @@ class HouseList(DataTable):
 
     def on_mount(self) -> None:
         self.set_border_title_from_id()
+        self.service: PropertyService = self.app.service
         self.cursor_type = "row"
-        table = self
-        table.add_columns("ID", "Description")
+        self.add_columns("ID", "Description")
         self.load_data()
 
     def set_border_title_from_id(self) -> None:
@@ -88,58 +98,26 @@ class HouseList(DataTable):
         self.border_title = " ".join(map(str.capitalize, parts))
         return None
 
-    async def action_add_house(self) -> None:
-        async def process_houses(houses: tuple[bool, list[str]] | None):
+    def action_add_house(self) -> None:
+        def process_houses(houses: tuple[bool, str, list[str]] | None):
             if not houses:
-                return
-            to_save, property_numbers = houses
+                return None
+            to_save, site_name, ids = houses
             if not to_save:
                 return
-
-            store = JSONStore(JSON_STORE)
-            for property_number in property_numbers:
-                try:
-                    property_models = await get_property_models_async(property_number)
-                    page_data = property_models["PAGE_MODEL"]
-                    store.set(property_number, self.id, page_data)
-                    self.app.notify(f"Data saved for {property_number}")
-                except Exception as e:
-                    self.app.notify(
-                        f"Failed: {property_number}.\n\n{e}", severity="error"
-                    )
+            property_id = ids[0]
+            self.service.add_property(site_name, property_id, TO_REVIEW)
             self.load_data()
 
         self.app.push_screen(AddHouseScreen(), process_houses)
 
     def action_move_house(self) -> None:
-        def move_house(to: str | None) -> None:
-            if not to:
-                return
-            list_container = self.parent
-            if not list_container:
-                raise ValueError(f"No parent container for {self}")
-            old_table = self
-            key, _ = old_table.coordinate_to_cell_key(old_table.cursor_coordinate)
-            store = JSONStore(JSON_STORE)
-            self.app.notify(f"Moving {key.value} to {to}")
-            store.update_status(key.value, to)
-            self.load_data()
-            new_list = list_container.query_one(f"#{to}", HouseList)
-            new_list.load_data()
+        def move_house(to: str | None) -> None: ...
 
         self.app.push_screen(MoveScreen(), move_house)
 
     def load_data(self) -> None:
-        if not self.id:
-            raise ValueError(f"{self} missind id.")
-        store = JSONStore(JSON_STORE)
-        data = store.get_main_table_data(self.id)
-        table = self
-        table.clear()
-        for row in data:
-            table.add_row(
-                row["property_number"], row["description"], key=row["property_number"]
-            )
+        self.clear()
 
     class HouseSelectionChanged(Message):
         def __init__(self, property_number: str) -> None:
@@ -154,9 +132,6 @@ class HouseList(DataTable):
             return
         detail_container = containers.first()
         detail_container.post_message(self.HouseSelectionChanged(self.property_number))
-
-    def watch_property_number(self) -> None:
-        self.notify_container()
 
     def on_data_table_row_highlighted(self, message: DataTable.RowHighlighted) -> None:
         self.property_number = message.row_key.value or ""
